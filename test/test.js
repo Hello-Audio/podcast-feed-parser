@@ -1,6 +1,6 @@
 const chai = require('chai')
 const expect = chai.expect
-const chaiAsPromised = require('chai-as-promised')
+const { default: chaiAsPromised } = require('chai-as-promised')
 const fs = require('fs')
 const path = require('path')
 const podcastFeedParser = require('../index')
