@@ -7,6 +7,12 @@ const podcastFeedParser = require('../index')
 const ERRORS = podcastFeedParser.ERRORS
 
 const testFilesPath = path.join(__dirname, 'testfiles')
+const sampleFeed = fs.readFileSync(path.join(testFilesPath, 'bc-sample.xml'), 'utf8').toString()
+const badSampleFeed = fs.readFileSync(path.join(testFilesPath, 'bc-sample-bad.xml'), 'utf8').toString()
+const sampleFeedWithNewFeedUrl = fs.readFileSync(path.join(testFilesPath, 'bc-sample-new-feed-url.xml'), 'utf8').toString()
+const sampleCustomTagsFeed = fs.readFileSync(path.join(testFilesPath, 'bc-sample-custom-tags.xml'), 'utf8').toString()
+const sampleOrderFeed = fs.readFileSync(path.join(testFilesPath, 'bc-sample-order.xml'), 'utf8').toString()
+const sampleOrderingFeed = fs.readFileSync(path.join(testFilesPath, 'replyall-sample-ordering.xml'), 'utf8').toString()
 
 chai.use(chaiAsPromised)
 
@@ -17,21 +23,73 @@ describe('Reading files', function () {
 })
 
 describe('Fetching Feeds', function () {
+  const feedURL = 'http://example.test/feed.xml'
+  const feedWithNewFeedURL = 'http://example.test/feed-with-new-feed-url.xml'
+  const missingFeedURL = 'http://example.test/not-a-real-url'
+  const redirectedFeedURL = 'http://example.test/redirected-feed.xml'
+  const fetchModulePath = require.resolve('isomorphic-fetch')
+  const parserModulePath = require.resolve('../index')
+  let originalFetch
+  let parserWithMockedFetch
+
+  before(function () {
+    originalFetch = require(fetchModulePath)
+    require.cache[fetchModulePath].exports = async function (url) {
+      if (url === feedURL || url === redirectedFeedURL) {
+        return {
+          text: async function () {
+            return sampleFeed
+          }
+        }
+      }
+
+      if (url === feedWithNewFeedURL) {
+        return {
+          text: async function () {
+            return sampleFeedWithNewFeedUrl.replace(
+              'http://feeds.gimletmedia.com/hearreplyall',
+              redirectedFeedURL
+            )
+          }
+        }
+      }
+
+      if (url === missingFeedURL) {
+        throw new Error('network error')
+      }
+
+      return {
+        text: async function () {
+          return 'not found'
+        }
+      }
+    }
+
+    delete require.cache[parserModulePath]
+    parserWithMockedFetch = require('../index')
+  })
+
+  after(function () {
+    delete require.cache[parserModulePath]
+    require.cache[fetchModulePath].exports = originalFetch
+  })
+
   it('should fetch the feed and receive a promise', async function () {
-    await expect(podcastFeedParser.getPodcastFromURL('http://allthingschemical.libsyn.com/rss')).to.be.a('promise')
+    await expect(parserWithMockedFetch.getPodcastFromURL(feedURL)).to.be.a('promise')
   })
   it('should fetch the feed and receive a promise that is fulfilled', async function () {
-    await expect(podcastFeedParser.getPodcastFromURL('http://allthingschemical.libsyn.com/rss')).to.eventually.be.fulfilled
+    await expect(parserWithMockedFetch.getPodcastFromURL(feedURL)).to.eventually.be.fulfilled
   })
   it('should fetch the feed and receive a promise that is rejected', async function () {
-    await expect(podcastFeedParser.getPodcastFromURL('http://allthingschemical.libsyn.com/notarealurl')).to.eventually.be.rejected
+    await expect(parserWithMockedFetch.getPodcastFromURL(missingFeedURL)).to.eventually.be.rejected
+  })
+  it('should redirect and fetch new feed when new-feed-url is present', async function () {
+    const podcast = await parserWithMockedFetch.getPodcastFromURL(feedWithNewFeedURL)
+    expect(podcast.meta.title).to.equal('All Things Chemical')
   })
 })
 
 describe('Parsing Local Feeds', function () {
-  const sampleFeed = fs.readFileSync(testFilesPath+'/bc-sample.xml', 'utf8').toString()
-  const badSampleFeed = fs.readFileSync(testFilesPath+'/bc-sample-bad.xml', 'utf8').toString()
-
   it('should parse the feed and return a Podcast object', function () {
     expect(podcastFeedParser.getPodcastFromFeed(sampleFeed)).to.be.an('object').that.contains.keys('meta', 'episodes')
   })
@@ -41,7 +99,6 @@ describe('Parsing Local Feeds', function () {
 })
 
 describe('Getting Podcast Object from Sample Feed', function () {
-  const sampleFeed = fs.readFileSync(testFilesPath+'/bc-sample.xml', 'utf8').toString()
   const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed)
 
   it('should be a valid Podcast Object', function () {
@@ -117,9 +174,8 @@ describe('Getting Podcast Object from Sample Feed', function () {
 })
 
 describe('Checking custom options', function () {
-  const sampleFeed = fs.readFileSync(testFilesPath+'/bc-sample-custom-tags.xml', 'utf8').toString()
   it('should return object with all default fields when no options object is provided', function() {
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed)
     expect(podcast.meta).to.be.an('object').that.contains.keys('title', 'description', 'subtitle', 'imageURL', 'lastUpdated', 'link',
       'language', 'editor', 'author', 'summary', 'categories', 'owner',
       'explicit', 'complete', 'blocked')
@@ -135,7 +191,7 @@ describe('Checking custom options', function () {
         'episodes': ['default']
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.meta).to.be.an('object').that.contains.keys('title', 'description', 'subtitle', 'imageURL', 'lastUpdated', 'link',
       'language', 'editor', 'author', 'summary', 'categories', 'owner',
       'explicit', 'complete', 'blocked')
@@ -151,7 +207,7 @@ describe('Checking custom options', function () {
         'episodes': ['default', 'timeline']
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.meta).to.be.an('object').that.contains.keys('title', 'description', 'subtitle', 'imageURL', 'lastUpdated', 'link',
       'language', 'editor', 'author', 'summary', 'categories', 'owner',
       'explicit', 'complete', 'blocked', 'webMaster')
@@ -167,7 +223,7 @@ describe('Checking custom options', function () {
         'episodes': ['title', 'pubDate', 'timeline']
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.meta).to.be.an('object').that.contains.keys('title', 'description', 'webMaster')
     expect(podcast.episodes[0]).to.be.an('object').that.contains.keys('title', 'pubDate', 'timeline')
   })
@@ -179,7 +235,7 @@ describe('Checking custom options', function () {
         episodes: ['pubDate']
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.episodes[0]).to.be.an('object')
   })
 
@@ -189,7 +245,7 @@ describe('Checking custom options', function () {
         meta: ['booklink']
       }
     }
-    expect(podcastFeedParser.getPodcastFromFeed.bind(podcastFeedParser, sampleFeed, options)).to.throw(ERRORS.requiredError)
+    expect(podcastFeedParser.getPodcastFromFeed.bind(podcastFeedParser, sampleCustomTagsFeed, options)).to.throw(ERRORS.requiredError)
   })
 
   it('should return an object with uncleaned title field', function() {
@@ -198,7 +254,7 @@ describe('Checking custom options', function () {
         'meta': 'title'
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.meta.title).to.be.an('array')
   })
 
@@ -208,23 +264,21 @@ describe('Checking custom options', function () {
         'episodes': ['duration']
       }
     }
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed, options)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleCustomTagsFeed, options)
     expect(podcast.episodes[0].duration[0]).to.be.a('string')
   })
 })
 
 describe("Checking re-ordering functionality", function() {
   it('should list episodes in order described by order tags in the rss feed', function() {
-    const sampleFeed = fs.readFileSync(testFilesPath+'/bc-sample-order.xml', 'utf8').toString()
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleOrderFeed)
     expect(podcast.episodes[3].title).to.equal('Chemical Regulation in the Middle East') // order 1
     expect(podcast.episodes[2].title).to.equal('Animal Testing and New TSCA') // order 2
     expect(podcast.episodes[1].title).to.equal('Introducing All Things Chemical ') // default ordering by pubDate
   })
 
   it('should order by title when no order is specified and pubDate is the same', async function() {
-    const sampleFeed = fs.readFileSync(testFilesPath+'/replyall-sample-ordering.xml', 'utf8').toString()
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleOrderingFeed)
     expect(podcast.episodes[2].title).to.equal('Reply All Mic Test') // first by pubDate
     expect(podcast.episodes[1].title).to.equal('#1 A Stranger Says I Love You') // pubDate is the same, order by title
     expect(podcast.episodes[0].title).to.equal('#2 The Secret, Gruesome Internet For Doctors') // pubDate is the same, order by title
@@ -233,15 +287,7 @@ describe("Checking re-ordering functionality", function() {
 
 describe("Checking handling of new-feed-url", function() {
   it('should ignore new-feed-url element and parse feed normally', function() {
-    const sampleFeed = fs.readFileSync(testFilesPath+'/bc-sample-new-feed-url.xml', 'utf8').toString()
-    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeed)
+    const podcast = podcastFeedParser.getPodcastFromFeed(sampleFeedWithNewFeedUrl)
     expect(podcast.meta.title).to.equal('All Things Chemical')
   })
-
-/*
-  it('should redirect and fetch new feed', async function() {
-    const podcast = await podcastFeedParser.getPodcastFromURL('http://sandbox.bierfeldt.me/podcast-feed-parser/testfiles/bc-sample-new-feed-url.xml')
-    expect(podcast.meta.title).to.equal('Reply All')
-  })
-*/
 })

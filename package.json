@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jbierfeldt/podcast-feed-parser.git"
+    "url": "https://github.com/Hello-Audio/podcast-feed-parser.git"
   },
   "keywords": [
     "javascript",
@@ -31,6 +31,6 @@
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "expect": "^26.6.2",
-    "mocha": "^8.2.1"
+    "mocha": "^11.7.5"
   }
 }
