@@ -221,13 +221,14 @@ const CLEAN = exports.CLEAN = {
 
   owner: function (object) {
     let ownerObject = {}
+    const ownerNode = object[0]
 
-    if (object[0].hasOwnProperty("itunes:name")) {
-      ownerObject.name = object[0]["itunes:name"][0]
+    if (Object.prototype.hasOwnProperty.call(ownerNode, "itunes:name")) {
+      ownerObject.name = ownerNode["itunes:name"][0]
     }
 
-    if (object[0].hasOwnProperty("itunes:email")) {
-      ownerObject.email = object[0]["itunes:email"][0]
+    if (Object.prototype.hasOwnProperty.call(ownerNode, "itunes:email")) {
+      ownerObject.email = ownerNode["itunes:email"][0]
     }
 
     return ownerObject
